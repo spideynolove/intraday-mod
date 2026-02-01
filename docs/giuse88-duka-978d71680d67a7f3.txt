@@ -1,0 +1,767 @@
+Directory structure:
+└── duka/
+    ├── __init__.py
+    ├── main.py
+    ├── app/
+    │   ├── __init__.py
+    │   └── app.py
+    ├── core/
+    │   ├── __init__.py
+    │   ├── candle.py
+    │   ├── csv_dumper.py
+    │   ├── fetch.py
+    │   ├── processor.py
+    │   └── utils.py
+    └── tests/
+        ├── __init__.py
+        ├── test_dates_generator.py
+        └── test_find_sunday.py
+
+================================================
+FILE: duka/__init__.py
+================================================
+[Empty file]
+
+
+================================================
+FILE: duka/main.py
+================================================
+#!/usr/bin/env python3.5
+
+import argparse
+from datetime import date, timedelta
+
+from duka.app import app
+from duka.core import valid_date, set_up_signals
+from duka.core.utils import valid_timeframe, TimeFrame
+
+VERSION = '0.2.1'
+
+
+def main():
+    parser = argparse.ArgumentParser(prog='duka', usage='%(prog)s [options]')
+    parser.add_argument('-v', '--version', action='version',
+                        version='Version: %(prog)s-{version}'.format(version=VERSION))
+    parser.add_argument('symbols', metavar='SYMBOLS', type=str, nargs='+',
+                        help='symbol list using format EURUSD EURGBP')
+    parser.add_argument('-d', '--day', type=valid_date, help='specific day format YYYY-MM-DD (default today)',
+                        default=date.today() - timedelta(1))
+    parser.add_argument('-s', '--startdate', type=valid_date, help='start date format YYYY-MM-DD (default today)')
+    parser.add_argument('-e', '--enddate', type=valid_date, help='end date format YYYY-MM-DD (default today)')
+    parser.add_argument('-t', '--thread', type=int, help='number of threads (default 20)', default=5)
+    parser.add_argument('-f', '--folder', type=str, help='destination folder (default .)', default='.')
+    parser.add_argument('-c', '--candle', type=valid_timeframe,
+                        help='use candles instead of ticks. Accepted values M1 M2 M5 M10 M15 M30 H1 H4',
+                        default=TimeFrame.TICK)
+    parser.add_argument('--header', action='store_true', help='include CSV header (default false)', default=False)
+    args = parser.parse_args()
+
+    if args.startdate is not None:
+        start = args.startdate
+    else:
+        start = args.day
+
+    if args.enddate is not None:
+        end = args.enddate
+    else:
+        end = args.day
+
+    set_up_signals()
+    app(args.symbols, start, end, args.thread, args.candle, args.folder, args.header)
+
+
+if __name__ == '__main__':
+    main()
+
+
+
+================================================
+FILE: duka/app/__init__.py
+================================================
+from .app import app
+
+
+
+================================================
+FILE: duka/app/app.py
+================================================
+import concurrent
+import threading
+import time
+from collections import deque
+from datetime import timedelta, date
+
+from ..core import decompress, fetch_day, Logger
+from ..core.csv_dumper import CSVDumper
+from ..core.utils import is_debug_mode, TimeFrame
+
+SATURDAY = 5
+day_counter = 0
+
+
+def days(start, end):
+    if start > end:
+        return
+    end = end + timedelta(days=1)
+    today = date.today()
+    while start != end:
+        if start.weekday() != SATURDAY and start != today:
+            yield start
+        start = start + timedelta(days=1)
+
+
+def format_left_time(seconds):
+    if seconds < 0:
+        return "--:--:--"
+    m, s = divmod(seconds, 60)
+    h, m = divmod(m, 60)
+    return "%d:%02d:%02d" % (h, m, s)
+
+
+def update_progress(done, total, avg_time_per_job, threads):
+    progress = 1 if total == 0 else done / total
+    progress = int((1.0 if progress > 1.0 else progress) * 100)
+    remainder = 100 - progress
+    estimation = (avg_time_per_job * (total - done) / threads)
+    if not is_debug_mode():
+        print('\r[{0}] {1}%  Left : {2}  '.format('#' * progress + '-' * remainder, progress,
+                                                  format_left_time(estimation)), end='')
+
+
+def how_many_days(start, end):
+    return sum(1 for _ in days(start, end))
+
+
+def avg(fetch_times):
+    if len(fetch_times) != 0:
+        return sum(fetch_times) / len(fetch_times)
+    else:
+        return -1
+
+
+def name(symbol, timeframe, start, end):
+    ext = ".csv"
+
+    for x in dir(TimeFrame):
+        if getattr(TimeFrame, x) == timeframe:
+            ts_str = x
+
+    name = symbol + "_" + ts_str + "_" + str(start)
+
+    if start != end:
+        name += "_" + str(end)
+
+    return name + ext
+
+
+def app(symbols, start, end, threads, timeframe, folder, header):
+    if start > end:
+        return
+    lock = threading.Lock()
+    global day_counter
+    total_days = how_many_days(start, end)
+
+    if total_days == 0:
+        return
+
+    last_fetch = deque([], maxlen=5)
+    update_progress(day_counter, total_days, -1, threads)
+
+    def do_work(symbol, day, csv):
+        global day_counter
+        star_time = time.time()
+        Logger.info("Fetching day {0}".format(day))
+        try:
+            csv.append(day, decompress(symbol, day, fetch_day(symbol, day)))
+        except Exception as e:
+            print("ERROR for {0}, {1} Exception : {2}".format(day, symbol, str(e)))
+        elapsed_time = time.time() - star_time
+        last_fetch.append(elapsed_time)
+        with lock:
+            day_counter += 1
+        Logger.info("Day {0} fetched in {1}s".format(day, elapsed_time))
+
+    futures = []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+
+        files = {symbol: CSVDumper(symbol, timeframe, start, end, folder, header) for symbol in symbols}
+
+        for symbol in symbols:
+            for day in days(start, end):
+                futures.append(executor.submit(do_work, symbol, day, files[symbol]))
+
+        for future in concurrent.futures.as_completed(futures):
+            if future.exception() is None:
+                update_progress(day_counter, total_days, avg(last_fetch), threads)
+            else:
+                Logger.error("An error happen when fetching data : ", future.exception())
+
+        Logger.info("Fetching data terminated")
+        for file in files.values():
+            file.dump()
+
+    update_progress(day_counter, total_days, avg(last_fetch), threads)
+
+
+
+================================================
+FILE: duka/core/__init__.py
+================================================
+from .fetch import fetch_day
+from .csv_dumper import CSVDumper
+from .utils import valid_date, Logger, set_up_signals
+from .processor import decompress
+
+__all__ = ['fetch_day', 'decompress', 'CSVDumper', 'valid_date', 'Logger', 'set_up_signals']
+
+
+
+
+
+================================================
+FILE: duka/core/candle.py
+================================================
+from datetime import datetime
+
+
+class Candle:
+    def __init__(self, symbol, timestamp, timeframe, sorted_values):
+        self.symbol = symbol
+        self.timestamp = timestamp
+        self.timeframe = timeframe
+        self.open_price = sorted_values[0]
+        self.close_price = sorted_values[len(sorted_values) - 1]
+        self.high = max(sorted_values)
+        self.low = min(sorted_values)
+
+    def __str__(self):
+        return str(datetime.fromtimestamp(self.timestamp)) + " [" + str(self.timestamp) + "] " \
+               + "-- " + self.symbol + " -- " \
+               + "{ H:" + str(self.high) + " L:" + str(self.low) + " O: " \
+               + str(self.open_price) + " C: " + str(self.close_price) + " }"
+
+    def __eq__(self, other):
+        return self.symbol == other.symbol \
+               and self.timestamp == other.timestamp \
+               and self.timeframe == other.timeframe \
+               and self.close_price == other.close_price \
+               and self.open_price == other.open_price \
+               and self.high == other.high \
+               and self.low == other.low
+
+    def __repr__(self):
+        return self.__str__()
+
+
+================================================
+FILE: duka/core/csv_dumper.py
+================================================
+import csv
+import time
+from os.path import join
+
+from .candle import Candle
+from .utils import TimeFrame, stringify, Logger
+
+TEMPLATE_FILE_NAME = "{}-{}_{:02d}_{:02d}-{}_{:02d}_{:02d}.csv"
+
+
+def format_float(number):
+    return format(number, '.5f')
+
+
+class CSVFormatter(object):
+    COLUMN_TIME = 0
+    COLUMN_ASK = 1
+    COLUMN_BID = 2
+    COLUMN_ASK_VOLUME = 3
+    COLUMN_BID_VOLUME = 4
+
+
+def write_tick(writer, tick):
+    writer.writerow(
+        {'time': tick[0],
+         'ask': format_float(tick[1]),
+         'bid': format_float(tick[2]),
+         'ask_volume': tick[3],
+         'bid_volume': tick[4]})
+
+
+def write_candle(writer, candle):
+    writer.writerow(
+        {'time': stringify(candle.timestamp),
+         'open': format_float(candle.open_price),
+         'close': format_float(candle.close_price),
+         'high': format_float(candle.high),
+         'low': format_float(candle.low)})
+
+
+class CSVDumper:
+    def __init__(self, symbol, timeframe, start, end, folder, header=False):
+        self.symbol = symbol
+        self.timeframe = timeframe
+        self.start = start
+        self.end = end
+        self.folder = folder
+        self.include_header = header
+        self.buffer = {}
+
+    def get_header(self):
+        if self.timeframe == TimeFrame.TICK:
+            return ['time', 'ask', 'bid', 'ask_volume', 'bid_volume']
+        return ['time', 'open', 'close', 'high', 'low']
+
+    def append(self, day, ticks):
+        previous_key = None
+        current_ticks = []
+        self.buffer[day] = []
+        for tick in ticks:
+            if self.timeframe == TimeFrame.TICK:
+                self.buffer[day].append(tick)
+            else:
+                ts = time.mktime(tick[0].timetuple())
+                key = int(ts - (ts % self.timeframe))
+                if previous_key != key and previous_key is not None:
+                    n = int((key - previous_key) / self.timeframe)
+                    for i in range(0, n):
+                        self.buffer[day].append(
+                            Candle(self.symbol, previous_key + i * self.timeframe, self.timeframe, current_ticks))
+                    current_ticks = []
+                current_ticks.append(tick[1])
+                previous_key = key
+
+        if self.timeframe != TimeFrame.TICK:
+            self.buffer[day].append(Candle(self.symbol, previous_key, self.timeframe, current_ticks))
+
+    def dump(self):
+        file_name = TEMPLATE_FILE_NAME.format(self.symbol,
+                                              self.start.year, self.start.month, self.start.day,
+                                              self.end.year, self.end.month, self.end.day)
+
+        Logger.info("Writing {0}".format(file_name))
+
+        with open(join(self.folder, file_name), 'w') as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=self.get_header())
+            if self.include_header:
+                writer.writeheader()
+            for day in sorted(self.buffer.keys()):
+                for value in self.buffer[day]:
+                    if self.timeframe == TimeFrame.TICK:
+                        write_tick(writer, value)
+                    else:
+                        write_candle(writer, value)
+
+        Logger.info("{0} completed".format(file_name))
+
+
+
+================================================
+FILE: duka/core/fetch.py
+================================================
+import asyncio
+import datetime
+import threading
+import time
+from functools import reduce
+from io import BytesIO, DEFAULT_BUFFER_SIZE
+
+import requests
+
+from ..core.utils import Logger, is_dst
+
+URL = "https://www.dukascopy.com/datafeed/{currency}/{year}/{month:02d}/{day:02d}/{hour:02d}h_ticks.bi5"
+ATTEMPTS = 5
+
+
+async def get(url):
+    loop = asyncio.get_event_loop()
+    buffer = BytesIO()
+    id = url[35:].replace('/', " ")
+    start = time.time()
+    Logger.info("Fetching {0}".format(id))
+    for i in range(ATTEMPTS):
+        try:
+            res = await loop.run_in_executor(None, lambda: requests.get(url, stream=True))
+            if res.status_code == 200:
+                for chunk in res.iter_content(DEFAULT_BUFFER_SIZE):
+                    buffer.write(chunk)
+                Logger.info("Fetched {0} completed in {1}s".format(id, time.time() - start))
+                if len(buffer.getbuffer()) <= 0:
+                    Logger.info("Buffer for {0} is empty ".format(id))
+                return buffer.getbuffer()
+            else:
+                Logger.warn("Request to {0} failed with error code : {1} ".format(url, str(res.status_code)))
+        except Exception as e:
+            Logger.warn("Request {0} failed with exception : {1}".format(id, str(e)))
+            time.sleep(0.5 * i)
+
+    raise Exception("Request failed for {0} after ATTEMPTS attempts".format(url))
+
+
+def create_tasks(symbol, day):
+
+    start = 0
+
+    if is_dst(day):
+        start = 1
+
+    url_info = {
+        'currency': symbol,
+        'year': day.year,
+        'month': day.month - 1,
+        'day': day.day
+    }
+    tasks = [asyncio.ensure_future(get(URL.format(**url_info, hour=i))) for i in range(0, 24)]
+
+    # if is_dst(day):
+    #     next_day = day + datetime.timedelta(days=1)
+    #     url_info = {
+    #         'currency': symbol,
+    #         'year': next_day.year,
+    #         'month': next_day.month - 1,
+    #         'day': next_day.day
+    #     }
+    #     tasks.append(asyncio.ensure_future(get(URL.format(**url_info, hour=0))))
+    return tasks
+
+
+def fetch_day(symbol, day):
+    local_data = threading.local()
+    loop = getattr(local_data, 'loop', asyncio.new_event_loop())
+    asyncio.set_event_loop(loop)
+    loop = asyncio.get_event_loop()
+    tasks = create_tasks(symbol, day)
+    loop.run_until_complete(asyncio.wait(tasks))
+
+    def add(acc, task):
+        acc.write(task.result())
+        return acc
+
+    return reduce(add, tasks, BytesIO()).getbuffer()
+
+
+
+================================================
+FILE: duka/core/processor.py
+================================================
+import struct
+from datetime import timedelta, datetime
+from lzma import LZMADecompressor, LZMAError, FORMAT_AUTO
+from .utils import is_dst
+
+
+def decompress_lzma(data):
+    results = []
+    len(data)
+    while True:
+        decomp = LZMADecompressor(FORMAT_AUTO, None, None)
+        try:
+            res = decomp.decompress(data)
+        except LZMAError:
+            if results:
+                break  # Leftover data is not a valid LZMA/XZ stream; ignore it.
+            else:
+                raise  # Error on the first iteration; bail out.
+        results.append(res)
+        data = decomp.unused_data
+        if not data:
+            break
+        if not decomp.eof:
+            raise LZMAError("Compressed data ended before the end-of-stream marker was reached")
+    return b"".join(results)
+
+
+def tokenize(buffer):
+    token_size = 20
+    size = int(len(buffer) / token_size)
+    tokens = []
+    for i in range(0, size):
+        tokens.append(struct.unpack('!IIIff', buffer[i * token_size: (i + 1) * token_size]))
+    return tokens
+
+
+def add_hour(ticks):
+    if len(ticks) is 0:
+        return ticks
+
+    hour_delta = 0
+
+    if ticks[0][0].weekday() == 6 or (ticks[0][0].day == 1 and ticks[0][0].month == 1):
+        if is_dst(ticks[0][0].date()):
+            hour_delta = 21
+        else:
+            hour_delta = 22
+
+    for index, v in enumerate(ticks):
+        if index != 0:
+            if ticks[index - 1][0].minute > ticks[index][0].minute:
+                hour_delta = ticks[index - 1][0].hour + 1
+            else:
+                hour_delta = ticks[index - 1][0].hour
+        ticks[index] = (v[0] + timedelta(hours=hour_delta), v[1], v[2], v[3], v[4])
+
+    return ticks
+
+
+def normalize(symbol, day, ticks):
+    def norm(time, ask, bid, volume_ask, volume_bid):
+        date = datetime(day.year, day.month, day.day) + timedelta(milliseconds=time)
+        # date.replace(tzinfo=datetime.tzinfo("UTC"))
+        point = 100000
+        if symbol.lower() in ['usdrub', 'xagusd', 'xauusd']:
+            point = 1000
+        return date, ask / point, bid / point, round(volume_ask * 1000000), round(volume_bid * 1000000)
+
+    return add_hour(list(map(lambda x: norm(*x), ticks)))
+
+
+def decompress(symbol, day, compressed_buffer):
+    if compressed_buffer.nbytes == 0:
+        return compressed_buffer
+    return normalize(symbol, day, tokenize(decompress_lzma(compressed_buffer)))
+
+
+
+================================================
+FILE: duka/core/utils.py
+================================================
+import argparse
+import logging
+import os
+import signal
+import sys
+import time
+from datetime import datetime, timedelta, date
+
+TEMPLATE = '%(asctime)s - %(levelname)s - %(threadName)s [%(thread)d] -  %(message)s'
+
+SUNDAY = 7
+
+
+class TimeFrame(object):
+    TICK = 0
+    S_30 = 30
+    M1 = 60
+    M2 = 120
+    M5 = 300
+    M10 = 600
+    M15 = 900
+    M30 = 1800
+    H1 = 3600
+    H4 = 14400
+    D1 = 86400
+
+
+def valid_date(s):
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except ValueError:
+        msg = "Not a valid date: '{0}'.".format(s)
+        raise argparse.ArgumentTypeError(msg)
+
+
+def valid_timeframe(s):
+    try:
+        return getattr(TimeFrame, s.upper())
+    except AttributeError:
+        msg = "Not a valid time frame: '{0}'.".format(s)
+        raise argparse.ArgumentTypeError(msg)
+
+
+def is_debug_mode():
+    log_env = os.getenv('LOG', None)
+    if log_env is not None:
+        return log_env.upper() == 'DEBUG'
+    else:
+        return False
+
+
+def get_logger():
+    logger = logging.getLogger('duka')
+    if is_debug_mode():
+        out_hdlr = logging.StreamHandler(sys.stdout)
+        out_hdlr.setFormatter(logging.Formatter(TEMPLATE))
+        out_hdlr.setLevel(logging.INFO)
+        logger.addHandler(out_hdlr)
+        logger.setLevel(logging.INFO)
+    else:
+        logger.addHandler(logging.NullHandler())
+    return logger
+
+
+Logger = get_logger()
+
+
+def set_up_signals():
+    def signal_handler(signal, frame):
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+
+DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S.%f'
+
+
+def to_utc_timestamp(time_str):
+    return time.mktime(from_time_string(time_str).timetuple())
+
+
+def from_time_string(time_str):
+    if '.' not in time_str:
+        time_str += '.0'
+    return datetime.strptime(time_str, DATETIME_FORMAT)
+
+
+def stringify(timestamp):
+    return str(datetime.fromtimestamp(timestamp))
+
+
+def find_sunday(year, month, position):
+    start = date(year, month, 1)
+    day_delta = timedelta(days=1)
+    counter = 0
+
+    while True:
+        if start.isoweekday() == SUNDAY:
+            counter += 1
+        if counter == position:
+            return start
+        start += day_delta
+
+
+def find_dst_begin(year):
+    """
+    DST starts the second sunday of March
+    """
+    return find_sunday(year, 3, 2)
+
+
+def find_dst_end(year):
+    """
+    DST ends the first sunday of November
+    """
+    return find_sunday(year, 11, 1)
+
+
+def is_dst(day):
+    return day >= find_dst_begin(day.year) and day < find_dst_end(day.year)
+
+
+
+================================================
+FILE: duka/tests/__init__.py
+================================================
+__author__ = 'giuseppe'
+
+
+
+================================================
+FILE: duka/tests/test_dates_generator.py
+================================================
+import unittest
+from datetime import date
+from duka.app.app import days
+
+
+class TestDateGenerator(unittest.TestCase):
+
+    def test_two_dates(self):
+        start = date(2016, 1, 20)
+        end = date(2016, 1, 21)
+        date_list = [d for d in days(start, end)]
+        self.assertEqual(len(date_list), 2)
+        self.assertEqual(date_list[0], start)
+        self.assertEqual(date_list[len(date_list)-1], end)
+
+    def test_one_single_date(self):
+        start = date(2016, 1, 20)
+        end = date(2016, 1, 20)
+        date_list = [d for d in days(start, end)]
+        self.assertEqual(len(date_list), 1)
+        self.assertEqual(date_list[0], start)
+        self.assertEqual(date_list[len(date_list)-1], end)
+
+    def test_skip_saturdays(self):
+        start = date(2016, 1, 2)
+        end = date(2016, 1, 2)
+        date_list = [d for d in days(start, end)]
+        self.assertEqual(len(date_list), 0)
+
+    def test_empty_result_when_start_is_bigger_than_end(self):
+        start = date(2016, 9, 2)
+        end = date(2016, 1, 2)
+        date_list = [d for d in days(start, end)]
+        self.assertEqual(len(date_list), 0)
+
+    def test_not_fetch_today(self):
+        start = date.today()
+        end = start
+        date_list = [d for d in days(start, end)]
+        self.assertEqual(len(date_list), 0)
+
+
+
+================================================
+FILE: duka/tests/test_find_sunday.py
+================================================
+import datetime
+import unittest
+
+from duka.core.utils import find_sunday, find_dst_begin, find_dst_end, is_dst
+
+
+class TestFindSunday(unittest.TestCase):
+    def test_find_8_march_2015(self):
+        res = find_sunday(2015, 3, 2)
+        self.assertEqual(res.day, 8)
+
+    def test_find_9_march_2014(self):
+        res = find_sunday(2014, 3, 2)
+        self.assertEqual(res.day, 9)
+
+    def test_find_13_march_2016(self):
+        res = find_sunday(2016, 3, 2)
+        self.assertEqual(res.day, 13)
+
+    def test_find_1_november_2015(self):
+        res = find_sunday(2015, 11, 1)
+        self.assertEqual(res.day, 1)
+
+    def test_find_2_november_2014(self):
+        res = find_sunday(2014, 11, 1)
+        self.assertEqual(res.day, 2)
+
+    def test_find_6_november_2016(self):
+        res = find_sunday(2016, 11, 1)
+        self.assertEqual(res.day, 6)
+
+    def test_dst_2015(self):
+        start = find_dst_begin(2015)
+        end = find_dst_end(2015)
+        self.assertEqual(start.day, 8)
+        self.assertEqual(start.month, 3)
+        self.assertEqual(end.day, 1)
+        self.assertEqual(end.month, 11)
+
+    def test_is_dst(self):
+        day = datetime.date(2015, 4, 5)
+        self.assertTrue(is_dst(day))
+
+    def test_is_not_dst(self):
+        day = datetime.date(2015, 1, 1)
+        self.assertFalse(is_dst(day))
+
+    def test_day_change_is_dst(self):
+        day = datetime.date(2015, 3, 8)
+        self.assertTrue(is_dst(day))
+
+    def test_day_change_back_is_not_dst(self):
+        day = datetime.date(2015, 11, 1)
+        self.assertFalse(is_dst(day))
+
+    def test_is_dst(self):
+        day = datetime.date(2013, 11, 3)
+        self.assertFalse(is_dst(day))
+
+
