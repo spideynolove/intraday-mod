@@ -12,12 +12,12 @@ class Aroon(Feature):
         write_to: Literal["state", "frame", "both"] = "state",
     ):
         super().__init__(write_to=write_to, period=period)
-        self.names = ['aroon_up', 'aroon_down']
+        self.names = [f'aroon_up_{period}', f'aroon_down_{period}']
 
         if write_to in {"state", "both"}:
             self.spaces = OrderedDict({
-                'aroon_up': gym.spaces.Box(0, 100, shape=(1,)),
-                'aroon_down': gym.spaces.Box(0, 100, shape=(1,)),
+                self.names[0]: gym.spaces.Box(0, 100, shape=(1,)),
+                self.names[1]: gym.spaces.Box(0, 100, shape=(1,)),
             })
         else:
             self.spaces = OrderedDict()
@@ -36,8 +36,8 @@ class Aroon(Feature):
         aroon_down = 100 * (self.period - periods_since_low) / self.period
 
         if self.write_to_frame:
-            setattr(frames[-1], 'aroon_up', aroon_up)
-            setattr(frames[-1], 'aroon_down', aroon_down)
+            setattr(frames[-1], self.names[0], aroon_up)
+            setattr(frames[-1], self.names[1], aroon_down)
         if self.write_to_state:
-            state['aroon_up'] = aroon_up
-            state['aroon_down'] = aroon_down
+            state[self.names[0]] = aroon_up
+            state[self.names[1]] = aroon_down

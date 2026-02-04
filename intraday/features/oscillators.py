@@ -59,7 +59,7 @@ class APO(Feature):
         self.fast_period = fast_period
         self.slow_period = slow_period
         self.source = source
-        self.names = ['apo']
+        self.names = [f'apo_{fast_period}_{slow_period}_{source}']
 
         self._fast_ema = None
         self._slow_ema = None
@@ -69,7 +69,7 @@ class APO(Feature):
 
         if write_to in {"state", "both"}:
             self.spaces = OrderedDict({
-                'apo': gym.spaces.Box(-math.inf, math.inf, shape=(1,))
+                self.names[0]: gym.spaces.Box(-math.inf, math.inf, shape=(1,))
             })
         else:
             self.spaces = OrderedDict()
@@ -100,9 +100,9 @@ class APO(Feature):
         self._n_iter += 1
 
         if self.write_to_frame:
-            setattr(frames[-1], 'apo', apo)
+            setattr(frames[-1], self.names[0], apo)
         if self.write_to_state:
-            state['apo'] = apo
+            state[self.names[0]] = apo
 
 
 class PPO(Feature):
@@ -117,7 +117,7 @@ class PPO(Feature):
         self.fast_period = fast_period
         self.slow_period = slow_period
         self.source = source
-        self.names = ['ppo']
+        self.names = [f'ppo_{fast_period}_{slow_period}_{source}']
 
         self._fast_ema = None
         self._slow_ema = None
@@ -127,7 +127,7 @@ class PPO(Feature):
 
         if write_to in {"state", "both"}:
             self.spaces = OrderedDict({
-                'ppo': gym.spaces.Box(-100, 100, shape=(1,))
+                self.names[0]: gym.spaces.Box(-100, 100, shape=(1,))
             })
         else:
             self.spaces = OrderedDict()
@@ -162,9 +162,9 @@ class PPO(Feature):
         self._n_iter += 1
 
         if self.write_to_frame:
-            setattr(frames[-1], 'ppo', ppo)
+            setattr(frames[-1], self.names[0], ppo)
         if self.write_to_state:
-            state['ppo'] = ppo
+            state[self.names[0]] = ppo
 
 
 class BOP(Feature):
