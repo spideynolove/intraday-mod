@@ -40,6 +40,22 @@ from .time_encoder import TimeEncoder
 from .vi import VI
 from .wma_signal import WMASignal
 from .zema import ZEMA
+from .willr import WILLR
+from .atr import ATR
+from .roc import ROC, ROCP, ROCR, ROCR100
+from .price_transforms import AVGPRICE, MEDPRICE, TYPPRICE, WCLPRICE
+from .trange import TRANGE
+from .mom import MOM
+from .stddev import STDDEV, VAR
+from .sma import SMA, WMA, TRIMA
+from .dema import DEMA, TEMA
+from .cci import CCI
+from .mfi import MFI
+from .aroon import Aroon
+from .natr import NATR
+from .cmo import CMO
+from .oscillators import ADXR, APO, PPO, BOP
+from .statistics import BETA, CORREL
 
 __all__ = [
     "Feature",
@@ -86,4 +102,34 @@ __all__ = [
     "VI",
     "WMASignal",
     "ZEMA",
+    "WILLR",
+    "ATR",
+    "ROC",
+    "ROCP",
+    "ROCR",
+    "ROCR100",
+    "AVGPRICE",
+    "MEDPRICE",
+    "TYPPRICE",
+    "WCLPRICE",
+    "TRANGE",
+    "MOM",
+    "STDDEV",
+    "VAR",
+    "SMA",
+    "WMA",
+    "TRIMA",
+    "DEMA",
+    "TEMA",
+    "CCI",
+    "MFI",
+    "Aroon",
+    "NATR",
+    "CMO",
+    "ADXR",
+    "APO",
+    "PPO",
+    "BOP",
+    "BETA",
+    "CORREL",
 ]
