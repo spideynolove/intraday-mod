@@ -36,6 +36,11 @@ from .time_encoder import TimeEncoder
 from .vi import VI
 from .wma_signal import WMASignal
 from .zema import ZEMA
+from .smc_swing_structure import SwingStructure
+from .smc_price_zones import PriceZones
+from .smc_order_block import OrderBlock
+from .smc_liquidity_sweep import LiquiditySweep
+from .smc_session_levels import SessionLevels
 
 __all__ = [
     "Feature",
@@ -77,4 +82,9 @@ __all__ = [
     "VI",
     "WMASignal",
     "ZEMA",
+    "SwingStructure",
+    "PriceZones",
+    "OrderBlock",
+    "LiquiditySweep",
+    "SessionLevels",
 ]
