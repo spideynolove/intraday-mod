@@ -195,13 +195,14 @@ class Labels:
         )
         out = []
         for j, event in enumerate(events):
-            t0 = event.end
-            t1 = (
-                events[j + 1].end
+            event_frame = event.frame
+            i0 = next((i for i, f in enumerate(frames) if f is event_frame), 0)
+            i1 = (
+                next((i for i, f in enumerate(frames) if f is events[j + 1].frame), len(frames))
                 if j + 1 < len(events)
-                else frames[-1].time_end
+                else len(frames)
             )
-            base_price = frames[event.i].close
+            base_price = event_frame.close
             upper_barrier = base_price + upper_k
             lower_barrier = base_price - lower_k
             upper_hit_i, lower_hit_i = None, None

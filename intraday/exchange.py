@@ -142,19 +142,17 @@ class Exchange:
             self.next_order_time = order.time_init
         return id
 
-    def get_order(self, id: int) -> (
+    def get_order(self, id: int) -> Union[
+        MarketOrder,
+        LimitOrder,
+        StopOrder,
+        TrailingStopOrder,
+        TakeProfitOrder,
         None,
-        Union[
-            MarketOrder,
-            LimitOrder,
-            StopOrder,
-            TrailingStopOrder,
-            TakeProfitOrder,
-        ],
-    ):
+    ]:
         return self.orders[id] if id in self.orders else None
 
-    def kill_order(self, id: Union[int, None], time_kill) -> (int, None):
+    def kill_order(self, id: Union[int, None], time_kill) -> Union[int, None]:
         if id not in self.orders:
             return None
         order = self.orders[id]
@@ -172,7 +170,7 @@ class Exchange:
             TrailingStopOrder,
             TakeProfitOrder,
         ],
-    ) -> (int, None):
+    ) -> Union[int, None]:
         if id in self.orders:
             self.kill_order(id, time_kill=new_order.time_init)
         return self.add_order(new_order)
@@ -390,4 +388,4 @@ class Exchange:
             return self.commission(operation, amount, price)
 
     def __repr__(self):
-        return f
+        return f"Exchange(spread={self.spread}, commission={self.commission})"

@@ -54,7 +54,7 @@ def duration(
 class Report(object):
     def __init__(
         self,
-        records: (None, Sequence[Record]) = None,
+        records: Union[None, Sequence[Record]] = None,
         initial_balance: Real = 100000,
         risk_free_rate: Real = 0.0,
         convention: str = "raw",

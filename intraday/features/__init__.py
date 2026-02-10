@@ -41,6 +41,7 @@ from .smc_price_zones import PriceZones
 from .smc_order_block import OrderBlock
 from .smc_liquidity_sweep import LiquiditySweep
 from .smc_session_levels import SessionLevels
+from .calendar_events import CalendarEvents
 
 __all__ = [
     "Feature",
@@ -87,4 +88,5 @@ __all__ = [
     "OrderBlock",
     "LiquiditySweep",
     "SessionLevels",
+    "CalendarEvents",
 ]

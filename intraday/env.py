@@ -405,7 +405,7 @@ class MultiAgentEnv(Exchange, gym.Env):
         raise NotImplementedError()
 
     def __repr__(self):
-        return f
+        return f"MultiAgentEnv(provider={self.provider.__class__.__name__}, processor={self.processor.__class__.__name__})"
 
     def __str__(self):
         return self.__repr__()

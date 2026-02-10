@@ -366,7 +366,7 @@ class RunProcessor(Processor):
         self.threshold_run_volume = None
         self.threshold_run_money = None
 
-    def process(self, trades: Sequence[Trade]) -> (Frame, None):
+    def process(self, trades: Sequence[Trade]) -> Optional[Frame]:
         result = None
         trade = trades[-1]
         frame = self.frame
@@ -443,7 +443,7 @@ class RunProcessor(Processor):
         self.n_trades += 1
         return result
 
-    def finish(self) -> (Frame, None):
+    def finish(self) -> Optional[Frame]:
         result = self.frame.finalize()
         if result is not None:
             self._process_frame(result)
