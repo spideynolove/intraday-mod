@@ -5,6 +5,7 @@ from .sine import SineProvider
 from .forexsb import ForexSBProvider
 from .calendar_provider import fetch_calendar, build_calendar_csv
 from .dukascopy_local import DukascopyLocalProvider
+from .dukascopy_downloader import DukascopyDownloader
 
 __all__ = [
     "MoexArchiveProvider",
@@ -15,4 +16,5 @@ __all__ = [
     "fetch_calendar",
     "build_calendar_csv",
     "DukascopyLocalProvider",
+    "DukascopyDownloader",
 ]
