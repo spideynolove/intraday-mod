@@ -62,6 +62,7 @@ from .natr import NATR
 from .cmo import CMO
 from .oscillators import ADXR, APO, PPO, BOP
 from .statistics import BETA, CORREL
+from .tick_microstructure import TickMicrostructure
 
 __all__ = [
     "Feature",
@@ -144,4 +145,5 @@ __all__ = [
     "BOP",
     "BETA",
     "CORREL",
+    "TickMicrostructure",
 ]
