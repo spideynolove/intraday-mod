@@ -1,27 +1,21 @@
 from __future__ import annotations
-from collections import namedtuple, OrderedDict
+from collections import OrderedDict
 from typing import Optional, Sequence
 import numpy as np
 import gymnasium as gym
 from ..feature import Feature
 from ..frame import Frame
 
-_Output = namedtuple("TickMicrostructureOutput", [
-    "buy_tick_ratio",
-    "vwap_deviation",
-    "spread_mean_norm",
-    "spread_expansion",
-    "flip_rate",
-])
+_NAMES = ["tm_buy_ratio", "tm_vwap_dev", "tm_spread_norm", "tm_spread_exp", "tm_flip_rate"]
 
 
 class TickMicrostructure(Feature):
     def __init__(self, write_to: str = "state", **kwargs):
         super().__init__(write_to=write_to, **kwargs)
-        self.names = list(_Output._fields)
+        self.names = _NAMES
         self.spaces = OrderedDict(
             (name, gym.spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32))
-            for name in self.names
+            for name in _NAMES
         )
 
     def process(self, frames: Sequence[Frame], state: OrderedDict) -> Optional[OrderedDict]:
@@ -34,13 +28,10 @@ class TickMicrostructure(Feature):
         spread_norm = avg_spread / frame.close if frame.close else 0.0
         spread_exp = (frame.trade_spread_max or avg_spread) / avg_spread
         flip_rate = (frame.flips or 0) / ticks
-        result = _Output(
-            buy_tick_ratio=float(buy_ratio),
-            vwap_deviation=float(vwap_dev),
-            spread_mean_norm=float(spread_norm),
-            spread_expansion=float(spread_exp),
-            flip_rate=float(flip_rate),
-        )
         if self.write_to_state:
-            state["tick_microstructure"] = result
+            state["tm_buy_ratio"] = float(buy_ratio)
+            state["tm_vwap_dev"] = float(vwap_dev)
+            state["tm_spread_norm"] = float(spread_norm)
+            state["tm_spread_exp"] = float(spread_exp)
+            state["tm_flip_rate"] = float(flip_rate)
         return state

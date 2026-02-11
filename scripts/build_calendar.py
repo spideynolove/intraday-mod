@@ -73,7 +73,8 @@ def build_live_part() -> pd.DataFrame:
         return pd.DataFrame(columns=_OUTPUT_COLS)
     df = pd.concat(all_chunks, ignore_index=True)
     df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
-    keep = [c for c in _OUTPUT_COLS if c in df.columns]
+    if "event" in df.columns:
+        df["event"] = df["event"].str.strip()
     for col in _OUTPUT_COLS:
         if col not in df.columns:
             df[col] = None
