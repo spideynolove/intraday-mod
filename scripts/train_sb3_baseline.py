@@ -2,9 +2,11 @@
 import sys
 import argparse
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize
@@ -20,6 +22,16 @@ from intraday.features import (
 )
 
 
+class GymnasiumAdapter(gym.Wrapper):
+    def reset(self, **kwargs):
+        obs = self.env.reset(**kwargs)
+        return obs, {}
+
+    def step(self, action: Any):
+        obs, reward, done, _frame = self.env.step(action)
+        return obs, reward, done, False, {}
+
+
 def make_env(data_dir: str, symbol: str, years: list[int]):
     provider = DukascopyLocalProvider(data_dir=data_dir, symbol=symbol, years=years)
     processor = IntervalProcessor(method="time", interval=300)
@@ -32,10 +44,10 @@ def make_env(data_dir: str, symbol: str, years: list[int]):
         ADXR(period=14),
         NATR(period=14),
         STDDEV(period=20),
-        SMA(period=50),
+        SMA(period=50, source="close"),
         TickMicrostructure(),
     ]
-    return SingleAgentEnv(
+    return GymnasiumAdapter(SingleAgentEnv(
         provider=provider,
         processor=processor,
         action_scheme=BuySellCloseAction(),
@@ -43,7 +55,7 @@ def make_env(data_dir: str, symbol: str, years: list[int]):
         features_pipeline=features_pipeline,
         episode_min_duration=3600 * 8,
         episode_max_duration=3600 * 24,
-    )
+    ))
 
 
 def main():
@@ -64,7 +76,7 @@ def main():
     )
     env = VecNormalize(env, norm_obs=True, norm_reward=True)
 
-    model = PPO("MlpPolicy", env, verbose=1, tensorboard_log="runs/ppo_baseline")
+    model = PPO("MultiInputPolicy", env, verbose=1, tensorboard_log="runs/ppo_baseline")
     model.learn(total_timesteps=args.timesteps)
     model.save(args.output)
     env.save(args.output + "_vecnorm.pkl")

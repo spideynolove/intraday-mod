@@ -53,7 +53,7 @@ class DukascopyLocalProvider(Provider):
         self._trades.sort(key=lambda t: t.datetime)
         if rng is not None and len(self._trades) > 0:
             max_start = max(0, len(self._trades) // 2)
-            self._index = int(rng.randint(0, max_start))
+            self._index = int(rng.integers(0, max_start))
         else:
             self._index = 0
         self._episode_start = self._trades[self._index].datetime if self._trades else None
