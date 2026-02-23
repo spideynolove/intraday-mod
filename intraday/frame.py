@@ -243,3 +243,9 @@ class Frame(object):
 
 def _diff(v1, v2):
     return v1 - v2 if v1 is not None and v2 is not None else 0.0
+
+
+try:
+    from ._frame import Frame
+except ImportError:
+    pass

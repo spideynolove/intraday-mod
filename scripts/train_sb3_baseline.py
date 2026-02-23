@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import VecNormalize
+from stable_baselines3.common.vec_env import VecNormalize, SubprocVecEnv
 
 from intraday.env import SingleAgentEnv
 from intraday.providers.dukascopy_local import DukascopyLocalProvider
@@ -32,8 +32,7 @@ class GymnasiumAdapter(gym.Wrapper):
         return obs, reward, done, False, {}
 
 
-def make_env(data_dir: str, symbol: str, years: list[int]):
-    provider = DukascopyLocalProvider(data_dir=data_dir, symbol=symbol, years=years)
+def _build_env(provider: DukascopyLocalProvider) -> GymnasiumAdapter:
     processor = IntervalProcessor(method="time", interval=300)
     features_pipeline = [
         WILLR(period=14),
@@ -58,6 +57,13 @@ def make_env(data_dir: str, symbol: str, years: list[int]):
     ))
 
 
+def _make_env_factory(shm_refs: dict, symbol: str, years: list[int]):
+    def factory():
+        provider = DukascopyLocalProvider.from_shared_memory(shm_refs, symbol=symbol, years=years)
+        return _build_env(provider)
+    return factory
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train PPO baseline on Dukascopy tick data")
     parser.add_argument("--data-dir", default="/home/hung/Public/duka-resources")
@@ -70,17 +76,33 @@ def main():
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
 
-    env = make_vec_env(
-        lambda: make_env(args.data_dir, args.symbol, args.years),
-        n_envs=args.n_envs,
+    print(f"Loading {args.symbol} data for years {args.years}...")
+    parent_provider = DukascopyLocalProvider(
+        data_dir=args.data_dir,
+        symbol=args.symbol,
+        years=args.years,
     )
-    env = VecNormalize(env, norm_obs=True, norm_reward=True)
+    shm_refs = parent_provider.share_memory()
+    print(f"Loaded {parent_provider._total:,} trades into shared memory.")
 
-    model = PPO("MultiInputPolicy", env, verbose=1, tensorboard_log="runs/ppo_baseline")
-    model.learn(total_timesteps=args.timesteps)
-    model.save(args.output)
-    env.save(args.output + "_vecnorm.pkl")
-    print(f"Saved to {args.output}")
+    env = None
+    try:
+        env = make_vec_env(
+            _make_env_factory(shm_refs, args.symbol, args.years),
+            n_envs=args.n_envs,
+            vec_env_cls=SubprocVecEnv,
+        )
+        env = VecNormalize(env, norm_obs=True, norm_reward=True)
+
+        model = PPO("MultiInputPolicy", env, verbose=1, tensorboard_log="runs/ppo_baseline")
+        model.learn(total_timesteps=args.timesteps)
+        model.save(args.output)
+        env.save(args.output + "_vecnorm.pkl")
+        print(f"Saved to {args.output}")
+    finally:
+        if env is not None:
+            env.close()
+        parent_provider.unlink_shared_memory()
 
 
 if __name__ == "__main__":

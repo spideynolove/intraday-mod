@@ -510,3 +510,9 @@ def _get_time_span(
         * interval
     )
     return (s + dt.timedelta(seconds=seconds)).span("second", interval)
+
+
+try:
+    from ._processor import FastIntervalProcessor as IntervalProcessor
+except ImportError:
+    pass
