@@ -6,6 +6,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import numpy as np
 import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
@@ -23,13 +24,16 @@ from intraday.features import (
 
 
 class GymnasiumAdapter(gym.Wrapper):
+    def _fix_obs(self, obs):
+        return {k: np.array([v], dtype=np.float32) for k, v in obs.items()}
+
     def reset(self, **kwargs):
         obs = self.env.reset(**kwargs)
-        return obs, {}
+        return self._fix_obs(obs), {}
 
     def step(self, action: Any):
         obs, reward, done, _frame = self.env.step(action)
-        return obs, reward, done, False, {}
+        return self._fix_obs(obs), reward, done, False, {}
 
 
 def _build_env(provider: DukascopyLocalProvider) -> GymnasiumAdapter:
@@ -66,9 +70,9 @@ def _make_env_factory(shm_refs: dict, symbol: str, years: list[int]):
 
 def main():
     parser = argparse.ArgumentParser(description="Train PPO baseline on Dukascopy tick data")
-    parser.add_argument("--data-dir", default="/home/hung/Public/duka-resources")
-    parser.add_argument("--symbol", default="EURUSD")
-    parser.add_argument("--years", nargs="+", type=int, default=list(range(2012, 2018)))
+    parser.add_argument("--data-dir", default="/home/hung/Public/duka-resources/majors")
+    parser.add_argument("--symbol", default="GBPUSD")
+    parser.add_argument("--years", nargs="+", type=int, default=list(range(2015, 2020)))
     parser.add_argument("--timesteps", type=int, default=500_000)
     parser.add_argument("--n-envs", type=int, default=4)
     parser.add_argument("--output", default="models/ppo_baseline")

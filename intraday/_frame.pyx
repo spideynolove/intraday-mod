@@ -167,8 +167,9 @@ cdef class Frame:
         cdef bint is_buy, same_op
         cdef object trade, prev_trade, datetime_obj
 
-        trade = trades[-1]
-        prev_trade = trades[-2] if len(trades) > 1 else None
+        cdef int _n = len(trades)
+        trade = trades[_n - 1]
+        prev_trade = trades[_n - 2] if _n > 1 else None
         price = trade.price
         amount = trade.amount
         is_buy = (trade.operation == "B")

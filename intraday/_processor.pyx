@@ -28,7 +28,7 @@ cdef class FastIntervalProcessor:
         cdef double dur_min, dur_max
 
         result = None
-        trade = trades[-1]
+        trade = trades[len(trades) - 1]
         dur_min = self.duration[0]
         dur_max = self.duration[1]
 
