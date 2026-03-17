@@ -1,0 +1,52 @@
+{"type":"entity","id":"MultiAgentEnv","label":"MultiAgentEnv","category":"class","file":"intraday/env.py","notes":"Base Gymnasium environment - NOT compliant: step() returns 4-tuple, reset() returns states list not (obs,info). GymnasiumAdapter required for SB3."}
+{"type":"entity","id":"SingleAgentEnv","label":"SingleAgentEnv","category":"class","file":"intraday/env.py","notes":"Wraps MultiAgentEnv for single-agent use. Adds rendering. Still not Gymnasium-compliant directly."}
+{"type":"entity","id":"GymnasiumAdapter","label":"GymnasiumAdapter","category":"class","file":"scripts/train_sb3_baseline.py","notes":"Bridges MultiAgentEnv/SingleAgentEnv to proper Gymnasium API (5-tuple step, (obs,info) reset). Required for SB3 PPO."}
+{"type":"entity","id":"Exchange","label":"Exchange","category":"class","file":"intraday/exchange.py","notes":"Core order execution. Simulates delays, spread, order_luck. DANGER: price_step defaults to 1 - catastrophic for forex (prices ~1.xxxxx)."}
+{"type":"entity","id":"Provider","label":"Provider","category":"protocol","file":"intraday/provider.py","notes":"Iterator-based trade data source. Must implement __next__() and reset(). Not all providers comply."}
+{"type":"entity","id":"BinanceArchiveProvider","label":"BinanceArchiveProvider","category":"class","file":"intraday/providers/","notes":"Downloads monthly trade archives from Binance. Complies with Provider protocol."}
+{"type":"entity","id":"BinanceKlines","label":"BinanceKlines","category":"class","file":"intraday/providers/","notes":"Downloads candle data. Faster for longer intervals."}
+{"type":"entity","id":"MoexArchiveProvider","label":"MoexArchiveProvider","category":"class","file":"intraday/providers/","notes":"Moscow Exchange binary format provider."}
+{"type":"entity","id":"SineProvider","label":"SineProvider","category":"class","file":"intraday/providers/","notes":"Sine wave generator for testing."}
+{"type":"entity","id":"ForexSBProvider","label":"ForexSBProvider","category":"class","file":"intraday/providers/forex_sb.py","notes":"BREAKS Provider protocol - no __next__(), incompatible reset() signature. Cannot be used where Provider is expected."}
+{"type":"entity","id":"DukascopyLocalProvider","label":"DukascopyLocalProvider","category":"class","file":"intraday/providers/dukascopy_local.py","notes":"Loads ALL years into memory at once on reset(). Memory risk for large datasets."}
+{"type":"entity","id":"Processor","label":"Processor","category":"class","file":"intraday/processor.py","notes":"Aggregates trade stream into frames. Subtypes: IntervalProcessor, ImbalanceProcessor, RunProcessor."}
+{"type":"entity","id":"IntervalProcessor","label":"IntervalProcessor","category":"class","file":"intraday/processor.py","notes":"Aggregates by time, tick count, volume, or money."}
+{"type":"entity","id":"ImbalanceProcessor","label":"ImbalanceProcessor","category":"class","file":"intraday/processor.py","notes":"Aggregates by buy/sell imbalance."}
+{"type":"entity","id":"RunProcessor","label":"RunProcessor","category":"class","file":"intraday/processor.py","notes":"Aggregates by directional runs."}
+{"type":"entity","id":"Feature","label":"Feature","category":"class","file":"intraday/feature.py","notes":"Base class for all technical indicators. WARNING: Feature spaces declare Box(shape=(1,)) but features write scalar floats to state dict - shape mismatch."}
+{"type":"entity","id":"TickMicrostructure","label":"TickMicrostructure","category":"class","file":"intraday/features/","notes":"Writes individual state keys. Used in SB3 baseline."}
+{"type":"entity","id":"ActionScheme","label":"ActionScheme","category":"class","file":"intraday/actions.py","notes":"Maps agent actions to exchange orders."}
+{"type":"entity","id":"BuySellCloseAction","label":"BuySellCloseAction","category":"class","file":"intraday/actions.py","notes":"Discrete action scheme: Buy, Sell, Close."}
+{"type":"entity","id":"PingPongAction","label":"PingPongAction","category":"class","file":"intraday/actions.py","notes":"Continuous limit order placement."}
+{"type":"entity","id":"RewardScheme","label":"RewardScheme","category":"class","file":"intraday/rewards.py","notes":"Calculates rewards. WARNING: idle_penalty is applied even on terminal frames (before done check)."}
+{"type":"entity","id":"BalanceReward","label":"BalanceReward","category":"class","file":"intraday/rewards.py","notes":"Reward based on balance change. Can normalize by ATR."}
+{"type":"entity","id":"ConstantReward","label":"ConstantReward","category":"class","file":"intraday/rewards.py","notes":"Fixed reward values."}
+{"type":"entity","id":"Account","label":"Account","category":"class","file":"intraday/account.py","notes":"Tracks balance, position, ROI. Each agent gets own Account instance."}
+{"type":"entity","id":"Report","label":"Report","category":"class","file":"intraday/report.py","notes":"Performance metrics: Sharpe, Sortino, Profit Factor, etc."}
+{"type":"entity","id":"Frame","label":"Frame","category":"class","file":"intraday/frame.py","notes":"OHLCV + metadata container. Output of Processor, input to Features."}
+{"type":"entity","id":"render","label":"render module","category":"module","file":"intraday/render.py","notes":"BROKEN: imports from gym.envs.classic_control.rendering (old gym), not gymnasium. Will fail with gymnasium-only install."}
+{"type":"entity","id":"setup","label":"setup.py","category":"config","file":"setup.py","notes":"STALE: still lists gym>=0.17.2 and python>=3.7. Modernization comments present but not applied to dependencies."}
+{"type":"relation","source":"MultiAgentEnv","target":"Exchange","relation":"owns"}
+{"type":"relation","source":"MultiAgentEnv","target":"Provider","relation":"owns"}
+{"type":"relation","source":"MultiAgentEnv","target":"Processor","relation":"owns"}
+{"type":"relation","source":"MultiAgentEnv","target":"Feature","relation":"owns"}
+{"type":"relation","source":"MultiAgentEnv","target":"ActionScheme","relation":"owns"}
+{"type":"relation","source":"MultiAgentEnv","target":"RewardScheme","relation":"owns"}
+{"type":"relation","source":"MultiAgentEnv","target":"Account","relation":"owns"}
+{"type":"relation","source":"SingleAgentEnv","target":"MultiAgentEnv","relation":"wraps"}
+{"type":"relation","source":"GymnasiumAdapter","target":"SingleAgentEnv","relation":"wraps"}
+{"type":"relation","source":"Exchange","target":"Account","relation":"updates"}
+{"type":"relation","source":"Provider","target":"Processor","relation":"feeds"}
+{"type":"relation","source":"Processor","target":"Frame","relation":"produces"}
+{"type":"relation","source":"Frame","target":"Feature","relation":"feeds"}
+{"type":"relation","source":"Feature","target":"MultiAgentEnv","relation":"feeds_state"}
+{"type":"relation","source":"ForexSBProvider","target":"Provider","relation":"violates_protocol"}
+{"type":"relation","source":"DukascopyLocalProvider","target":"Provider","relation":"implements"}
+{"type":"issue","id":"issue_1","description":"MultiAgentEnv step() returns 4-tuple (obs,reward,done,info) not 5-tuple (obs,reward,terminated,truncated,info). Reset() returns states list not (obs,info). Not Gymnasium-compliant without GymnasiumAdapter."}
+{"type":"issue","id":"issue_2","description":"render.py imports from gym.envs.classic_control.rendering (old gym). Breaks with gymnasium-only install."}
+{"type":"issue","id":"issue_3","description":"setup.py lists gym>=0.17.2 and python>=3.7 despite modernization to gymnasium and python>=3.10."}
+{"type":"issue","id":"issue_4","description":"ForexSBProvider has no __next__() method and incompatible reset() signature. Cannot be used as Provider."}
+{"type":"issue","id":"issue_5","description":"DukascopyLocalProvider.reset() loads all years into memory at once. Memory risk for multi-year datasets."}
+{"type":"issue","id":"issue_6","description":"idle_penalty in RewardScheme is applied on terminal frames before the done check runs."}
+{"type":"issue","id":"issue_7","description":"Feature base class declares observation_space with Box(shape=(1,)) but features write scalar floats to state dict. Shape mismatch."}
+{"type":"issue","id":"issue_8","description":"Exchange.price_step defaults to 1. Catastrophic for forex pairs where prices are ~1.xxxxx - effectively rounds all prices to integers."}
